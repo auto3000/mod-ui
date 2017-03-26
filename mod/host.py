@@ -128,6 +128,7 @@ class Host(object):
             from mod.hmi import HMI
             self.hmi = HMI()
 
+        print ( "JFD 5555 xxxx ")
         self.hmi = hmi
         self.addr = ("localhost", 5555)
         self.readsock = None
@@ -533,7 +534,7 @@ class Host(object):
                 self._idle = True
 
         self._idle = False
-
+        print ( "JFD Main socket, used for sending messages ")
         # Main socket, used for sending messages
         self.writesock = iostream.IOStream(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
         self.writesock.set_close_callback(self.writer_connection_closed)
@@ -808,6 +809,7 @@ class Host(object):
 
     # send data to host, set modified flag to true
     def send_modified(self, msg, callback=None, datatype='int'):
+        print("JFD send_modified %s" % msg )
         self.pedalboard_modified = True
         self._queue.append((msg, callback, datatype))
         if self._idle:
@@ -1515,6 +1517,7 @@ class Host(object):
         return "effect_%d:%s" % (instance_id, portsymbol)
 
     def connect(self, port_from, port_to, callback):
+        print("JFD connect host.py")
         if (port_from, port_to) in self.connections:
             print("NOTE: Requested connection already exists")
             callback(True)

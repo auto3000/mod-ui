@@ -22,7 +22,7 @@ for line in fh:
 
 
 if len(queue) == 0:
-    print "Nothing to send"
+    print ('Nothing to send')
     sys.exit(1)
 
 for msg in queue:

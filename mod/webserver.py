@@ -1536,6 +1536,7 @@ def prepare(isModApp = False):
     if LOG:
         from tornado.log import enable_pretty_logging
         enable_pretty_logging()
+        print( "JFD enable_pretty_logging");
 
     def checkhost():
         if SESSION.host.readsock is None or SESSION.host.writesock is None:
@@ -1550,6 +1551,7 @@ def prepare(isModApp = False):
     ioinstance.add_callback(checkhost)
 
 def start():
+    print ("JFD start instance")
     IOLoop.instance().start()
 
 def stop():

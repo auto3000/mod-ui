@@ -34,7 +34,12 @@ elif HOST_CARLA:
     from mod.host_carla import CarlaHost as Host
 else:
     from mod.host import Host
+    print("JFD start Host session.py");
 
+
+print("JFD start session.py");
+	
+	
 class Session(object):
     def __init__(self):
         self.ioloop = ioloop.IOLoop.instance()
@@ -126,10 +131,12 @@ class Session(object):
 
     # Connect 2 ports
     def web_connect(self, port_from, port_to, callback):
+        print("JFD web_disconnect")
         self.host.connect(port_from, port_to, callback)
 
     # Disconnect 2 ports
     def web_disconnect(self, port_from, port_to, callback):
+        print("JFD web_disconnect")
         self.host.disconnect(port_from, port_to, callback)
 
     # Save the current pedalboard
