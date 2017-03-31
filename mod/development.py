@@ -21,8 +21,17 @@ from mod.hmi import HMI
 from mod.host import Host
 
 class FakeHMI(HMI):
+    def __init__(self):
+        self.sp = None
+        self.queue = []
+        self.queue_idle = True
+        self.initialized = False
+
     def init(self, callback):
         pass
+
+    #def read_until(delimiter, callback=None, max_bytes=None):
+    #    pass
 
     def send(self, msg, callback=None, datatype=None):
         logging.info(msg)

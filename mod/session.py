@@ -21,10 +21,11 @@ from datetime import timedelta
 from tornado import iostream, ioloop, gen
 
 from mod.settings import (DEV_ENVIRONMENT, DEV_HMI, DEV_HOST,
-                          HMI_SERIAL_PORT, HMI_BAUD_RATE, HOST_CARLA)
+                          HMI_SERIAL_PORT, HMI_SOCKET_PORT, HMI_BAUD_RATE, HOST_CARLA)
 from mod.bank import get_last_bank_and_pedalboard
 from mod.development import FakeHost, FakeHMI
 from mod.hmi import HMI
+from mod.hmisocket import HMISocket
 from mod.recorder import Recorder, Player
 from mod.screenshot import ScreenshotGenerator
 
@@ -38,8 +39,8 @@ else:
 
 
 print("JFD start session.py");
-	
-	
+
+
 class Session(object):
     def __init__(self):
         self.ioloop = ioloop.IOLoop.instance()
@@ -57,14 +58,17 @@ class Session(object):
         # Try to open real HMI
         hmiOpened = False
 
-        if not DEV_HMI:
+        if DEV_HMI:
             self.hmi  = HMI(HMI_SERIAL_PORT, HMI_BAUD_RATE, self.hmi_initialized_cb)
+            hmiOpened = self.hmi.sp is not None
+        else:
+            self.hmi  = HMISocket(HMI_SOCKET_PORT, self.hmi_initialized_cb)
             hmiOpened = self.hmi.sp is not None
 
         print("Using HMI =>", hmiOpened)
 
         if not hmiOpened:
-            self.hmi = FakeHMI(HMI_SERIAL_PORT, HMI_BAUD_RATE, self.hmi_initialized_cb)
+            self.hmi = FakeHMI()
 
         self.host = Host(self.hmi, self.msg_callback)
 

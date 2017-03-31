@@ -124,10 +124,6 @@ class InstanceIdMapper(object):
 
 class Host(object):
     def __init__(self, hmi, msg_callback):
-        if False:
-            from mod.hmi import HMI
-            self.hmi = HMI()
-
         print ( "JFD 5555 xxxx ")
         self.hmi = hmi
         self.addr = ("localhost", 5555)
