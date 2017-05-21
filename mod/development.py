@@ -34,7 +34,7 @@ class FakeHMI(HMI):
     #    pass
 
     def send(self, msg, callback=None, datatype=None):
-        logging.info(msg)
+        logging.info('[JFD] fake send msg='+msg)
         if callback is None:
             return
         if datatype == 'boolean':

@@ -423,6 +423,9 @@ class Host(object):
                 return 0.0
             return float(pluginData['mapPresets'].index(pluginData['preset']))
 
+        print(json.dumps(pluginData))
+        print(json.dumps(pluginData['ports']))
+        print(json.dumps( pluginData['ports'][portsymbol]))
         return pluginData['ports'][portsymbol]
 
     def addr_task_store_address_data(self, instance_id, portsymbol, data):

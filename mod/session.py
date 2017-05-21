@@ -63,7 +63,7 @@ class Session(object):
             hmiOpened = self.hmi.sp is not None
         else:
             self.hmi  = HMISocket(HMI_SOCKET_PORT, self.hmi_initialized_cb)
-            hmiOpened = self.hmi.sp is not None
+            hmiOpened = True #self.hmi.sp is not None
 
         print("Using HMI =>", hmiOpened)
 

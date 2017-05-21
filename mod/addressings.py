@@ -503,9 +503,14 @@ class Addressings(object):
         self.hmi_load_current(actuator_uri, callback)
 
     def hmi_load_next_hw(self, actuator_hmi, callback):
+        print (actuator_hmi)
+        print(self.hmi_hw2uri_map)
         actuator_uri    = self.hmi_hw2uri_map[actuator_hmi]
+        print(actuator_uri)
+        print(self.hmi_addressings)
         addressings     = self.hmi_addressings[actuator_uri]
         addressings_len = len(addressings['addrs'])
+        print(addressings)
 
         if addressings_len == 0:
             print("ERROR: hmi_load_next_hw failed, empty list")

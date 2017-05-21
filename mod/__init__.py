@@ -120,5 +120,13 @@ def symbolify(name):
 
 def get_hardware_actuators():
     mod_hw = safe_json_load("/etc/mod-hardware-descriptor.json", dict)
+    return [ { 'uri': '/hmi/knob1' },
+            { 'uri': '/hmi/knob2' },
+            { 'uri': '/hmi/knob3' },
+            { 'uri': '/hmi/knob4' },
+            { 'uri': '/hmi/footswitch1' },
+            { 'uri': '/hmi/footswitch2' },
+            { 'uri': '/hmi/footswitch3' },
+            { 'uri': '/hmi/footswitch4' } ]
 
-    return mod_hw.get('actuators', [])
+    #return mod_hw.get('actuators', [])

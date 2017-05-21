@@ -19,13 +19,16 @@
 from datetime import timedelta
 from tornado.iostream import BaseIOStream
 from tornado import ioloop
+from tornado import gen
 
 from mod.protocol import Protocol, ProtocolError
 
 import serial, logging
 import time
+import sys
 
 class SerialIOStream(BaseIOStream):
+
     def __init__(self, sp):
         self.sp = sp
         super(SerialIOStream, self).__init__()
@@ -37,16 +40,21 @@ class SerialIOStream(BaseIOStream):
         return self.sp.close()
 
     def write_to_fd(self, data):
+        def no_callback1():
+            pass
         try:
-            return self.sp.write(data)
+            return self.sp.write(data, no_callback1)
         except serial.SerialTimeoutException:
             return 0
 
     def read_from_fd(self):
         try:
-            r = self.sp.read(self.read_chunk_size)
-        except:
-            print("SerialIOStream: failed to read from HMI serial")
+            if hasattr(self.sp, 'read'):
+                r = self.sp.read(self.read_chunk_size)
+            else:
+                r = self.sp.read_bytes(self.read_chunk_size)
+        except Exception as inst:
+            print ('SerialIOStream: failed to read from HMI serial ', inst)
             return None
         if r == '':
             return None
@@ -89,6 +97,7 @@ class HMI(object):
         self.checker()
 
     def checker(self, data=None):
+        logging.error("[JFD] enter checker ")
         if data is not None:
             logging.info('[hmi] received <- %s' % repr(data))
             try:
@@ -114,21 +123,28 @@ class HMI(object):
                             self.send("resp %d" % (0 if resp else -1))
                         else:
                             self.send("resp %d %s" % (0 if resp else -1, resp_args))
-
                     msg.run_cmd(_callback)
         try:
+            logging.error("[JFD] wait read_until ")
             self.sp.read_until(b'\0', self.checker)
+            logging.error("[JFD] continue read_until ")
         except serial.SerialException as e:
             logging.error("[hmi] error while reading %s" % e)
 
     def process_queue(self):
+        logging.info("[hmi] process_queue: JFD entry")
         if self.sp is None:
+            logging.error("[hmi] process_queue: self.sp is None")
             return
+
+        def no_callback():
+            logging.info("[hmi] process_queue: JFD no_callback")
+            pass
 
         try:
             msg, callback, datatype = self.queue[0] # fist msg on the queue
             logging.info("[hmi] popped from queue: %s" % msg)
-            self.sp.write(bytes(msg, 'utf-8') + b"\0")
+            self.sp.write(bytes(msg, 'utf-8') + b"\0", no_callback)
             logging.info("[hmi] sending -> %s" % msg)
             self.queue_idle = False
         except IndexError:
@@ -140,6 +156,7 @@ class HMI(object):
         self.send("resp -1")
 
     def send(self, msg, callback=None, datatype='int'):
+        logging.error('[JFD] send msg=' + msg)
         if self.sp is None:
             return
 
@@ -150,8 +167,12 @@ class HMI(object):
                 self.process_queue()
             return
 
+        def no_callback2():
+            logging.error('[JFD] send: no_callback2')
+            pass
+
         # is resp, just send
-        self.sp.write(msg.encode('utf-8') + b'\0')
+        self.sp.write(msg.encode('utf-8') + b'\0', no_callback2)
 
     def initial_state(self, bank_id, pedalboard_id, pedalboards, callback):
         numBytesFree = 1024-64
