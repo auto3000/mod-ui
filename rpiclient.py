@@ -15,6 +15,9 @@ from tornado.locks import Lock
 from tornado.iostream import StreamClosedError
 from tornado import gen
 import csv
+import traceback
+from tornado.queues import Queue
+
 #mod-ui hmi server port
 PORT = 9999
 
@@ -223,7 +226,8 @@ class LCD:
 	@gen.coroutine
 	def delayMicroseconds(self, microseconds):
 		seconds = microseconds / float(1000000)	# divide microseconds by 1 million for seconds
-		yield gen.sleep(seconds)
+		result = yield gen.sleep(seconds)
+		return result
 
 	def pulseEnable(self):
 		self.GPIO.output(self.pin_e, False)
@@ -262,6 +266,37 @@ class FakeLCD(LCD):
 		self.pins_db = [None, None, None, None]
 		self.used_gpio = [None]
 		return
+
+
+
+class LCDProxyQueue(object):
+	def __init__(self, hwlcd):
+		self.hwlcd = hwlcd
+		self.queue = Queue()
+
+	def setup(self, ioloop):
+		ioloop.spawn_callback(self.consumer)
+
+	@gen.coroutine
+	def consumer(self):
+		while True:
+			item = yield self.queue.get()
+			try:
+				print("len of %s %d" % (item[0], len(item)))
+				item[1](*item[2:]) #item[1:]
+				#print('Doing work on %s' % func)
+			finally:
+				self.queue.task_done()
+
+	def message(self, text):
+		self.queue.put_nowait( ("message", self.hwlcd.message, text) )
+
+	def clear(self):
+		self.queue.put_nowait( ("clear", self.hwlcd.clear) )
+
+	def destroy(self):
+		self.hwlcd.destroy()
+
 
 class RotaryEncoder:
 
@@ -470,28 +505,34 @@ ViewState = Enum('ViewState', 'CONNECTING '
 							'LCDLIGHT ')
 ViewEvent = Enum('ViewEvent',  'PERIODIC_TICK_2S SOCKET_CONNECTED SHIFT ')
 
+# empty socket.write callback
+def socket_write_success():
+	pass
+
 
 class PedalView(object):
-	def __init__(self, model):
+	def __init__(self, model, lcd):
 		self.welcome_banner_state = 0
-		lcd.clear()
-		lcd.message("WELCOME TO --->\n  PEDALP II")
+		self.model = model
+		self.lcd = lcd
+		self.lcd.clear()
+		self.lcd.message("WELCOME TO --->\n  PEDALP II")
 		return
 
 	def updateConnecting(self):
 		if self.model.viewState == ViewState.CONNECTING:
 			if self.welcome_banner_state == 0:
-				self.model.display.message("PEDALP II WELCOME\nCONNECTING......")
+				self.lcd.message("PEDALP II WELCOME\nCONNECTING......")
 				self.welcome_banner_state = 1
 			else:
-				self.model.display.message("PEDALP II WELCOME\nCONNECTING...")
+				self.lcd.message("PEDALP II WELCOME\nCONNECTING...")
 				self.welcome_banner_state = 0
 		return
 
 	def updatePedalBoard(self):
 		if self.model.viewState == ViewState.PEDALBOARDSELECT:
 			new_pedalboard = (self.model.pedalboard_id + 1) % (self.model.pedalboards_len + 1)
-			self.display.message("SELECT BOARD %02d\n%16s" % (new_pedalboard, self.pedalboards[self.pedalboard_id]))
+			self.lcd.message("SELECT BOARD %02d\n%16s" % (new_pedalboard, self.model.pedalboards[self.model.pedalboard_id]))
 		return
 
 class PedalController(object):
@@ -507,9 +548,10 @@ class PedalController(object):
 
 	@gen.coroutine
 	def smNextEvent(self, event, **kwargs):
-		with (yield self.smLock.acquire()):
+		with ((yield self.smLock.acquire())):
 			if self.model.viewState == ViewState.CONNECTING:
 				if event == ViewEvent.SOCKET_CONNECTED:
+					self.periodic_PERIODIC_TICK_2S_Callback.stop()
 					self.model.viewState = ViewState.PEDALBOARDSELECT
 					self.view.updatePedalBoard()
 				elif event == ViewEvent.PERIODIC_TICK_2S:
@@ -521,7 +563,7 @@ class PedalController(object):
 					self.model.change_pedalboards(kwargs['angle'])
 					self.view.updatePedalBoard()
 				else:
-					print("ignored controlShift(state=%s angle=%s)" % (self.viewState, kwargs['angle']))
+					print("ignored controlShift(state=%s event=%s)" % (self.model.viewState, event))
 			else:
 				print("Error at line 483")
 		return
@@ -529,12 +571,12 @@ class PedalController(object):
 	def setup(self, ioloop):
 		self.model.viewState = ViewState.CONNECTING
 		self.smNextEvent(ViewEvent.PERIODIC_TICK_2S) # Display connecting... first time
-		self.periodic_PERIODIC_TICK_2S_Callback = tornado.ioloop.PeriodicCallback(smSubmit_PERIODIC_TICK_2S_Callback, 2000)
+		self.periodic_PERIODIC_TICK_2S_Callback = tornado.ioloop.PeriodicCallback(self.smSubmit_PERIODIC_TICK_2S_Callback, 2000)
 		self.periodic_PERIODIC_TICK_2S_Callback.start()
 		return
 
 	def controlShift(self, angle):
-		self.smNextEvent(self, event, ViewEvent.SHIFT, angle=angle)
+		self.smNextEvent(ViewEvent.SHIFT, angle=angle)
 		return
 
 	def controlUp(self):
@@ -549,8 +591,7 @@ class PedalController(object):
 
 class PedalModel(object):
 
-	def __init__(self, display):
-		self.display = display
+	def __init__(self):
 		self.communicationLayer = None # it must be set after construction asap
 		self.stateMachineController = None # it must be set after construction asap
 		self.viewState = ViewState.CONNECTING
@@ -619,15 +660,13 @@ class SocketService(object):
 		print("control_clean command")
 		callback(True)
 
-	@gen.coroutine
 	def error_run_callback(self, result):
 		if result == True:
-			yield self.stream.write(b'resp 0\0')
+			self.stream.write(b'resp 0\0', socket_write_success)
 		else:
 			print("error_run_callback: " + str(result))
-			yield self.stream.write(b'resp -1\0')
+			self.stream.write(b'resp -1\0', socket_write_success)
 			#raise ProtocolError("error_run_callback: %s" % (result))
-		return
 
 	@gen.coroutine
 	def socketService(self,data):
@@ -643,13 +682,12 @@ class SocketService(object):
 	def setup(self):
 		self.stream = yield TCPClient().connect("localhost", PORT)
 		self.socketService(None)
-		return
+		return self.stream
 
 	@gen.coroutine
 	def socket_write(self, str):
 		print("> send: %s" % str )
-		yield self.stream.write(str)
-		return
+		self.stream.write(str, socket_write_success)
 
 	def set_pedalboard(self, bank_id, pedalboard_id):
 		self.socket_write("pedalboard {0} {0}\0".format(bank_id, pedalboard_id).encode('ascii'));
@@ -725,16 +763,16 @@ class RotaryEncoderShell(object):
 		self.readNext(None)
 		return;
 
-
 if __name__ == "__main__":
 	global lcd, encoder, main_loop, rshell, ssocket
-	lcd = FakeLCD()
-	model = PedalModel(lcd)
-	view  = PedalView(model)
+	hwlcd = FakeLCD()
+	lcd = LCDProxyQueue(hwlcd)
+	model = PedalModel()
+	view  = PedalView(model, lcd)
 	controller = PedalController(model, view)
 	rshell = RotaryEncoderShell(controller)
 	encoder = FakeRotaryEncoder(0, 0, 0, rotaryEncoderCallback)
-	ssocket = SocketService(model, stateMachineController)
+	ssocket = SocketService(model, controller)
 	model.communicationLayer = ssocket
 	model.stateMachineController = controller
 	#sleep(3)
@@ -742,9 +780,11 @@ if __name__ == "__main__":
 		main_loop = tornado.ioloop.IOLoop.instance()
 		print("Tornado Server started")
 		controller.setup(main_loop)
+		lcd.setup(main_loop)
 		main_loop.start()
 	except:
 		print("Exception triggered - Tornado Server stopped.")
+		traceback.print_exc()
 		GPIO.cleanup()
 		lcd.clear()
 		lcd.destroy()
