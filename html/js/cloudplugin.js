@@ -41,7 +41,10 @@ JqueryClass('cloudPluginBox', {
             },
             upgradePluginURI: function (uri, callback) {
                 callback({}, "")
-            }
+            },
+            info: null,
+            isMainWindow: true,
+            windowName: "Plugin Store"
         }, options)
 
         self.data(options)
@@ -739,10 +742,18 @@ JqueryClass('cloudPluginBox', {
                 label : plugin.label,
                 ports : plugin.ports,
                 demo  : !!plugin.demo, // FIXME
+                plugin_href: PLUGINS_URL + '/' + btoa(plugin.uri),
                 pedalboard_href: desktop.getPedalboardHref(plugin.uri),
             };
 
-            var info = $(Mustache.render(TEMPLATES.cloudplugin_info, metadata))
+            var info = self.data('info')
+
+            if (info) {
+                info.remove()
+                self.data('info', null)
+            }
+
+            info = $(Mustache.render(TEMPLATES.cloudplugin_info, metadata))
 
             // hide control ports table if none available
             if (plugin.ports.control.input.length == 0) {
@@ -798,6 +809,9 @@ JqueryClass('cloudPluginBox', {
             }
 
             info.appendTo($('body'))
+            info.window({
+                windowName: "Cloud Plugin Info"
+            })
             info.window('open')
             self.data('info', info)
         }

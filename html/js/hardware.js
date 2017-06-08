@@ -258,6 +258,10 @@ function HardwareManager(options) {
             // hide ranges
             form.find('.range').hide()
 
+        } else if (port.properties.indexOf("enumeration") >= 0) {
+            // hide ranges
+            form.find('.range').hide()
+
         } else if (port.properties.indexOf("integer") < 0) {
             // float, allow non-integer stepping
             var step = (maxv-minv)/100
@@ -344,6 +348,7 @@ function HardwareManager(options) {
                 }
 
                 form.remove()
+                form = null
             })
         }
 
@@ -354,6 +359,7 @@ function HardwareManager(options) {
             if (actuator.uri == null && currentAddressing.uri == null) {
                 console.log("Nothing to do")
                 form.remove()
+                form = null
                 return
             }
 
@@ -402,6 +408,7 @@ function HardwareManager(options) {
                     // if not, just close the form
                     } else {
                         form.remove()
+                        form = null
                     }
                 })
             }
@@ -417,13 +424,17 @@ function HardwareManager(options) {
 
         form.find('.js-close').click(function () {
             form.remove()
+            form = null
         })
 
-        form.keydown(function (e) {
-            if (e.keyCode == 27) {
+        $('body').keydown(function (e) {
+            if (e.keyCode == 27 && form && form.is(':visible')) {
                 form.remove()
+                form = null
                 return false
             }
+        })
+        form.keydown(function (e) {
             if (e.keyCode == 13) {
                 saveAddressing()
                 return false

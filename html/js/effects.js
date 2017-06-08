@@ -84,6 +84,7 @@ JqueryClass('effectBox', {
 
         var settingsBox = self.find('#plugins-library-settings-window')
         settingsBox.window({
+            windowName: "Plugin Library",
             windowManager: options.windowManager,
             trigger: self.find('.js-settings-trigger')
         })
@@ -367,7 +368,7 @@ JqueryClass('effectBox', {
             start: function () {
                 if (self.data('info'))
                     self.data('info').remove()
-                self.data('windowManager').closeWindows()
+                self.data('windowManager').closeWindows(null, true)
                 self.window('fade')
             },
             stop: function () {
@@ -427,6 +428,7 @@ JqueryClass('effectBox', {
                 demo  : plugin.licensed < 0,
                 installed: true,
                 favorite_class: FAVORITES.indexOf(plugin.uri) >= 0 ? "favorite" : "",
+                plugin_href: PLUGINS_URL + '/' + btoa(plugin.uri),
                 pedalboard_href: desktop.getPedalboardHref(plugin.uri),
             };
 
@@ -480,6 +482,7 @@ JqueryClass('effectBox', {
             });
 
             info.window({
+                windowName: "Plugin Info",
                 windowManager: self.data('windowManager'),
                 close: function () {
                     info.remove()

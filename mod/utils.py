@@ -339,6 +339,16 @@ class PedalboardHardware(Structure):
         ("serial_midi_out", c_bool),
     ]
 
+class PedalboardTimeInfo(Structure):
+    _fields_ = [
+        ("bpb", c_float),
+        ("bpbCC", PedalboardMidiControl),
+        ("bpm", c_float),
+        ("bpmCC", PedalboardMidiControl),
+        ("rolling", c_bool),
+        ("rollingCC", PedalboardMidiControl),
+    ]
+
 class PedalboardInfo(Structure):
     _fields_ = [
         ("title", c_char_p),
@@ -347,6 +357,7 @@ class PedalboardInfo(Structure):
         ("plugins", POINTER(PedalboardPlugin)),
         ("connections", POINTER(PedalboardConnection)),
         ("hardware", PedalboardHardware),
+        ("timeInfo", PedalboardTimeInfo),
     ]
 
 class PedalboardInfo_Mini(Structure):
@@ -378,10 +389,13 @@ class JackData(Structure):
     _fields_ = [
         ("cpuLoad", c_float),
         ("xruns", c_uint),
+        ("rolling", c_bool),
+        ("bpb", c_double),
+        ("bpm", c_double),
     ]
 
-JackMidiPortAppeared = CFUNCTYPE(None, c_char_p, c_bool)
-JackMidiPortDeleted = CFUNCTYPE(None, c_char_p)
+JackPortAppeared = CFUNCTYPE(None, c_char_p, c_bool)
+JackPortDeleted = CFUNCTYPE(None, c_char_p)
 TrueBypassStateChanged = CFUNCTYPE(None, c_bool, c_bool)
 
 c_struct_types = (PluginAuthor,
@@ -392,7 +406,8 @@ c_struct_types = (PluginAuthor,
                   PluginPortsI,
                   PluginPorts,
                   PedalboardMidiControl,
-                  PedalboardHardware)
+                  PedalboardHardware,
+                  PedalboardTimeInfo)
 
 c_structp_types = (POINTER(PluginGUIPort),
                    POINTER(PluginPortScalePoint),
@@ -473,7 +488,7 @@ utils.init_jack.restype  = c_bool
 utils.close_jack.argtypes = None
 utils.close_jack.restype  = None
 
-utils.get_jack_data.argtypes = None
+utils.get_jack_data.argtypes = [c_bool]
 utils.get_jack_data.restype  = POINTER(JackData)
 
 utils.get_jack_buffer_size.argtypes = None
@@ -515,7 +530,7 @@ utils.get_truebypass_value.restype  = c_bool
 utils.set_truebypass_value.argtypes = [c_bool, c_bool]
 utils.set_truebypass_value.restype  = c_bool
 
-utils.set_util_callbacks.argtypes = [JackMidiPortAppeared, JackMidiPortDeleted, TrueBypassStateChanged]
+utils.set_util_callbacks.argtypes = [JackPortAppeared, JackPortDeleted, TrueBypassStateChanged]
 utils.set_util_callbacks.restype  = None
 
 # ------------------------------------------------------------------------------------------------------------
@@ -657,13 +672,16 @@ def init_jack():
 def close_jack():
     utils.close_jack()
 
-def get_jack_data():
-    data = utils.get_jack_data()
+def get_jack_data(withTransport):
+    data = utils.get_jack_data(withTransport)
     if not data:
         raise Exception
     return {
         'cpuLoad': data.contents.cpuLoad,
         'xruns'  : data.contents.xruns,
+        'rolling': data.contents.rolling,
+        'bpb'    : data.contents.bpb,
+        'bpm'    : data.contents.bpm
     }
 
 def get_jack_buffer_size():
@@ -712,15 +730,15 @@ def set_truebypass_value(right, bypassed):
 # ------------------------------------------------------------------------------------------------------------
 # callbacks
 
-global midiPortAppearedCb, midiPortDeletedCb, trueBypassChangedCb
-midiPortAppearedCb = midiPortDeletedCb = trueBypassChangedCb = None
+global portAppearedCb, portDeletedCb, trueBypassChangedCb
+portAppearedCb = portDeletedCb = trueBypassChangedCb = None
 
-def set_util_callbacks(midiPortAppeared, midiPortDeleted, trueBypassChanged):
-    global midiPortAppearedCb, midiPortDeletedCb, trueBypassChangedCb
-    midiPortAppearedCb  = JackMidiPortAppeared(midiPortAppeared)
-    midiPortDeletedCb   = JackMidiPortDeleted(midiPortDeleted)
+def set_util_callbacks(portAppeared, portDeleted, trueBypassChanged):
+    global portAppearedCb, portDeletedCb, trueBypassChangedCb
+    portAppearedCb      = JackPortAppeared(portAppeared)
+    portDeletedCb       = JackPortDeleted(portDeleted)
     trueBypassChangedCb = TrueBypassStateChanged(trueBypassChanged)
-    utils.set_util_callbacks(midiPortAppearedCb, midiPortDeletedCb, trueBypassChangedCb)
+    utils.set_util_callbacks(portAppearedCb, portDeletedCb, trueBypassChangedCb)
 
 # ------------------------------------------------------------------------------------------------------------
 # set process name

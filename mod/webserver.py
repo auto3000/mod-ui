@@ -33,7 +33,7 @@ from uuid import uuid4
 
 from mod.settings import (APP, LOG,
                           HTML_DIR, DOWNLOAD_TMP_DIR, DEVICE_KEY, DEVICE_WEBSERVER_PORT,
-                          CLOUD_HTTP_ADDRESS, PEDALBOARDS_HTTP_ADDRESS, CONTROLCHAIN_HTTP_ADDRESS,
+                          CLOUD_HTTP_ADDRESS, PLUGINS_HTTP_ADDRESS, PEDALBOARDS_HTTP_ADDRESS, CONTROLCHAIN_HTTP_ADDRESS,
                           LV2_PLUGIN_DIR, LV2_PEDALBOARDS_DIR, IMAGE_VERSION,
                           UPDATE_CC_FIRMWARE_FILE, UPDATE_MOD_OS_FILE, USING_256_FRAMES_FILE,
                           DEFAULT_ICON_TEMPLATE, DEFAULT_SETTINGS_TEMPLATE, DEFAULT_ICON_IMAGE,
@@ -148,6 +148,18 @@ def install_bundles_in_tmp_dir(callback):
 
     callback(resp)
 
+def run_command(args, cwd, callback):
+    ioloop = IOLoop.instance()
+    proc   = subprocess.Popen(args, cwd=cwd, stdout=subprocess.PIPE)
+
+    def end_fileno(fileno, event):
+        if proc.poll() is None:
+            return
+        ioloop.remove_handler(fileno)
+        callback()
+
+    ioloop.add_handler(proc.stdout.fileno(), end_fileno, 16)
+
 def install_package(bundlename, callback):
     filename = os.path.join(DOWNLOAD_TMP_DIR, bundlename)
 
@@ -160,41 +172,50 @@ def install_package(bundlename, callback):
         })
         return
 
-    proc = subprocess.Popen(['tar','zxf', filename],
-                            cwd=DOWNLOAD_TMP_DIR,
-                            stdout=subprocess.PIPE)
-
-    def end_untar_pkgs(fileno, event):
-        if proc.poll() is None:
-            return
-        ioloop.remove_handler(fileno)
+    def end_untar_pkgs():
         os.remove(filename)
         install_bundles_in_tmp_dir(callback)
 
-    ioloop = IOLoop.instance()
-    ioloop.add_handler(proc.stdout.fileno(), end_untar_pkgs, 16)
+    run_command(['tar','zxf', filename], DOWNLOAD_TMP_DIR, end_untar_pkgs)
 
-def move_file(src, dst, callback):
-    proc = subprocess.Popen(['mv', src, dst],
-                            stdout=subprocess.PIPE)
+@gen.coroutine
+def start_restore():
+    yield gen.Task(SESSION.hmi.send, "restore", datatype='boolean')
 
-    def end_move(fileno, event):
-        if proc.poll() is None:
-            return
-        ioloop.remove_handler(fileno)
-        callback()
+class TimelessRequestHandler(web.RequestHandler):
+    def compute_etag(self):
+        return None
 
-    ioloop = IOLoop.instance()
-    ioloop.add_handler(proc.stdout.fileno(), end_move, 16)
+    def set_default_headers(self):
+        self._headers.pop("Date")
 
-class JsonRequestHandler(web.RequestHandler):
+    def should_return_304(self):
+        return False
+
+class TimelessStaticFileHandler(web.StaticFileHandler):
+    def get_cache_time(self, path, modified, mime_type):
+        return 0
+
+    def get_modified_time(self):
+        return None
+
+    def set_default_headers(self):
+        self._headers.pop("Date")
+
+    def set_extra_headers(self, path):
+        self.set_header("Cache-Control", "public, max-age=31536000")
+
+    def should_return_304(self):
+        return self.check_etag_header()
+
+class JsonRequestHandler(TimelessRequestHandler):
     def write(self, data):
         # FIXME: something is sending strings out, need to investigate what later..
         # it's likely something using write(json.dumps(...))
         # we want to prevent that as it causes issues under Mac OS
 
         if isinstance(data, (bytes, unicode_type, dict)):
-            web.RequestHandler.write(self, data)
+            TimelessRequestHandler.write(self, data)
             self.finish()
             return
 
@@ -216,7 +237,7 @@ class JsonRequestHandler(web.RequestHandler):
             data = json.dumps(data)
             self.set_header("Content-Type", "application/json; charset=UTF-8")
 
-        web.RequestHandler.write(self, data)
+        TimelessRequestHandler.write(self, data)
         self.finish()
 
 class RemoteRequestHandler(JsonRequestHandler):
@@ -272,25 +293,166 @@ class SimpleFileReceiver(JsonRequestHandler):
 
 class SystemInfo(JsonRequestHandler):
     def get(self):
-        uname = os.uname()
+        hwdesc = safe_json_load("/etc/mod-hardware-descriptor.json", dict)
+        uname  = os.uname()
+
+        if os.path.exists("/etc/mod-release/system"):
+            with open("/etc/mod-release/system") as fh:
+                sysdate = fh.readline().replace("generated=","").split(" at ",1)[0].strip()
+        else:
+            sysdate = "Unknown"
+
         info = {
-            "hardware": safe_json_load("/etc/mod-hardware-descriptor.json", dict),
-            "env": dict((k, os.environ[k]) for k in [k for k in os.environ.keys() if k.startswith("MOD")]),
+            "hwname": hwdesc.get('name',"Unknown"),
+            "sysdate": sysdate,
             "python": {
-                "argv"    : sys.argv,
-                "path"    : sys.path,
-                "platform": sys.platform,
-                "prefix"  : sys.prefix,
                 "version" : sys.version
             },
             "uname": {
                 "machine": uname.machine,
                 "release": uname.release,
+                "sysname": uname.sysname,
                 "version": uname.version
             }
         }
 
         self.write(info)
+
+class SystemPreferences(JsonRequestHandler):
+    OPTION_NULL          = 0
+    OPTION_FILE_EXISTS   = 1
+    OPTION_FILE_CONTENTS = 2
+
+    def __init__(self, application, request, **kwargs):
+        JsonRequestHandler.__init__(self, application, request, **kwargs)
+
+        self.prefs = []
+
+        self.make_pref("bluetooth_name", self.OPTION_FILE_CONTENTS, "/data/bluetooth/name", str)
+        self.make_pref("jack_mono_copy",  self.OPTION_FILE_EXISTS, "/data/jack-mono-copy")
+        self.make_pref("jack_sync_mode",  self.OPTION_FILE_EXISTS, "/data/jack-sync-mode")
+        self.make_pref("jack_256_frames",  self.OPTION_FILE_EXISTS, "/data/using-256-frames")
+
+        # Optional services
+        self.make_pref("service_mixserver",  self.OPTION_FILE_EXISTS, "/data/enable-mixserver")
+        self.make_pref("service_netmanager", self.OPTION_FILE_EXISTS, "/data/enable-netmanager")
+
+    def make_pref(self, label, otype, data, valtype=None, valdef=None):
+        self.prefs.append({
+            "label": label,
+            "type" : otype,
+            "data" : data,
+            "valtype": valtype,
+            "valdef" : valdef,
+        })
+
+    def get(self):
+        ret = {}
+
+        for pref in self.prefs:
+            if pref['type'] == self.OPTION_FILE_EXISTS:
+                val = os.path.exists(pref['data'])
+
+            elif pref['type'] == self.OPTION_FILE_CONTENTS:
+                if os.path.exists(pref['data']):
+                    with open(pref['data']) as fh:
+                        val = fh.read().strip()
+                    try:
+                        val = pref['valtype'](val)
+                    except:
+                        val = pref['valdef']
+                else:
+                    val = pref['valdef']
+            else:
+                pass
+
+            ret[pref['label']] = val
+
+        self.write(ret)
+
+class SystemExeChange(JsonRequestHandler):
+    def post(self):
+        etype = self.get_argument('type')
+        print(etype)
+
+        if etype == "command":
+            cmd = self.get_argument('cmd')
+            print(cmd)
+
+            if cmd == "reboot":
+                self.run_command_wait(["hmi-reset"])
+                self.run_command_wait(["reboot"])
+
+            elif cmd == "restore":
+                IOLoop.instance().add_callback(start_restore)
+
+        elif etype == "filecreate":
+            path   = self.get_argument('path')
+            create = self.get_argument('create').strip()
+
+            if path not in ("jack-mono-copy", "jack-sync-mode", "using-256-frames"):
+                self.write(False)
+                return
+
+            filename = "/data/" + path
+
+            if create:
+                foldername = os.path.dirname(filename)
+                if not os.path.exists(foldername):
+                    os.makedirs(foldername)
+                with open(filename, 'wb') as fh:
+                    fh.write(b"")
+            elif os.path.exists(filename):
+                os.remove(filename)
+
+        elif etype == "filewrite":
+            path    = self.get_argument('path')
+            content = self.get_argument('content').strip()
+
+            if path not in ("bluetooth/name",):
+                self.write(False)
+                return
+
+            filename = "/data/" + path
+
+            if content:
+                foldername = os.path.dirname(filename)
+                if not os.path.exists(foldername):
+                    os.makedirs(foldername)
+                with open(filename, 'w') as fh:
+                    fh.write(content)
+            elif os.path.exists(filename):
+                os.remove(filename)
+
+        elif etype == "service":
+            name   = self.get_argument('name')
+            enable = bool(int(self.get_argument('enable')))
+
+            if name not in ("mixserver", "netmanager"):
+                self.write(False)
+                return
+
+            checkname   = "/data/enable-" + name
+            servicename = name
+
+            if servicename == "netmanager":
+                servicename = "jack-netmanager"
+
+            if enable:
+                with open(checkname, 'wb') as fh:
+                    fh.write(b"")
+                self.run_command_wait(["systemctl", "start", servicename])
+
+            else:
+                if os.path.exists(checkname):
+                    os.remove(checkname)
+                self.run_command_wait(["systemctl", "stop", servicename])
+
+        self.write(True)
+
+    @gen.coroutine
+    def run_command_wait(self, args):
+        yield gen.Task(run_command, args, None)
 
 class UpdateDownload(SimpleFileReceiver):
     destination_dir = "/tmp/os-update"
@@ -299,7 +461,9 @@ class UpdateDownload(SimpleFileReceiver):
         self.sfr_callback = callback
 
         # TODO: verify checksum?
-        move_file(os.path.join(self.destination_dir, data['filename']), UPDATE_MOD_OS_FILE, self.move_file_finished)
+        src = os.path.join(self.destination_dir, data['filename'])
+        dst = UPDATE_MOD_OS_FILE
+        run_command(['mv', src, dst], None, self.move_file_finished)
 
     def move_file_finished(self):
         self.result = True
@@ -313,12 +477,8 @@ class UpdateBegin(JsonRequestHandler):
             self.write(False)
             return
 
-        # write & finish before sending message
+        IOLoop.instance().add_callback(start_restore)
         self.write(True)
-
-        # send message asap, but not quite right now
-        yield gen.Task(self.flush, False)
-        yield gen.Task(SESSION.hmi.send, "restore", datatype='boolean')
 
 class ControlChainDownload(SimpleFileReceiver):
     destination_dir = "/tmp/cc-update"
@@ -327,7 +487,9 @@ class ControlChainDownload(SimpleFileReceiver):
         self.sfr_callback = callback
 
         # TODO: verify checksum?
-        move_file(os.path.join(self.destination_dir, data['filename']), UPDATE_CC_FIRMWARE_FILE, self.move_file_finished)
+        src = os.path.join(self.destination_dir, data['filename'])
+        dst = UPDATE_CC_FIRMWARE_FILE
+        run_command(['mv', src, dst], None, self.move_file_finished)
 
     def move_file_finished(self):
         self.result = True
@@ -383,7 +545,7 @@ class SDKEffectInstaller(EffectInstaller):
 
         self.write(resp)
 
-class EffectResource(web.StaticFileHandler):
+class EffectResource(TimelessStaticFileHandler):
 
     def initialize(self):
         # Overrides StaticFileHandler initialize
@@ -419,7 +581,7 @@ class EffectResource(web.StaticFileHandler):
         super(EffectResource, self).initialize(os.path.join(HTML_DIR, 'resources'))
         return super(EffectResource, self).get(path)
 
-class EffectImage(web.StaticFileHandler):
+class EffectImage(TimelessStaticFileHandler):
     def initialize(self):
         uri = self.get_argument('uri')
 
@@ -433,7 +595,7 @@ class EffectImage(web.StaticFileHandler):
         except:
             raise web.HTTPError(404)
 
-        return web.StaticFileHandler.initialize(self, root)
+        return TimelessStaticFileHandler.initialize(self, root)
 
     def parse_url_path(self, image):
         try:
@@ -447,11 +609,11 @@ class EffectImage(web.StaticFileHandler):
             except:
                 raise web.HTTPError(404)
             else:
-                web.StaticFileHandler.initialize(self, os.path.dirname(path))
+                TimelessStaticFileHandler.initialize(self, os.path.dirname(path))
 
         return path
 
-class EffectFile(web.StaticFileHandler):
+class EffectFile(TimelessStaticFileHandler):
     def initialize(self):
         # return custom type directly. The browser will do the parsing
         self.custom_type = None
@@ -468,7 +630,7 @@ class EffectFile(web.StaticFileHandler):
         except:
             raise web.HTTPError(404)
 
-        return web.StaticFileHandler.initialize(self, root)
+        return TimelessStaticFileHandler.initialize(self, root)
 
     def parse_url_path(self, prop):
         try:
@@ -484,7 +646,7 @@ class EffectFile(web.StaticFileHandler):
     def get_content_type(self):
         if self.custom_type is not None:
             return self.custom_type
-        return web.StaticFileHandler.get_content_type(self)
+        return TimelessStaticFileHandler.get_content_type(self)
 
 class EffectAdd(JsonRequestHandler):
     @web.asynchronous
@@ -631,6 +793,18 @@ class ServerWebSocket(websocket.WebSocketHandler):
             height = int(float(data[2]))
             SESSION.ws_pedalboard_size(width, height)
 
+        elif cmd == "link_enable":
+            on = bool(int(data[1]))
+            SESSION.host.set_link_enabled(on, True)
+
+        elif cmd == "transport-bpm":
+            bpm = float(data[1])
+            SESSION.host.set_transport_bpm(bpm)
+
+        elif cmd == "transport-rolling":
+            rolling = bool(int(data[1]))
+            SESSION.host.set_transport_rolling(rolling)
+
 class PackageUninstall(JsonRequestHandler):
     @web.asynchronous
     @gen.engine
@@ -696,7 +870,7 @@ class PedalboardSave(JsonRequestHandler):
             'bundlepath': bundlepath
         })
 
-class PedalboardPackBundle(web.RequestHandler):
+class PedalboardPackBundle(TimelessRequestHandler):
     @web.asynchronous
     @gen.engine
     def get(self):
@@ -841,10 +1015,10 @@ class PedalboardRemove(JsonRequestHandler):
         remove_pedalboard_from_banks(bundlepath)
         self.write(True)
 
-class PedalboardImage(web.StaticFileHandler):
+class PedalboardImage(TimelessStaticFileHandler):
     def initialize(self):
         root = self.get_argument('bundlepath')
-        return web.StaticFileHandler.initialize(self, root)
+        return TimelessStaticFileHandler.initialize(self, root)
 
     def parse_url_path(self, image):
         return os.path.join(self.root, "%s.png" % image)
@@ -995,7 +1169,7 @@ class HardwareLoad(JsonRequestHandler):
         hardware = SESSION.get_hardware()
         self.write(hardware)
 
-class TemplateHandler(web.RequestHandler):
+class TemplateHandler(TimelessRequestHandler):
     def get(self, path):
         # Caching strategy.
         # 1. If we don't have a version parameter, redirect
@@ -1016,6 +1190,14 @@ class TemplateHandler(web.RequestHandler):
 
         if not path:
             path = 'index.html'
+        elif path == 'settings':
+            uri = '/settings.html?v=%s' % curVersion
+            self.redirect(uri)
+            return
+        elif not os.path.exists(os.path.join(HTML_DIR, path)):
+            uri = '/?v=%s' % curVersion
+            self.redirect(uri)
+            return
 
         loader = Loader(HTML_DIR)
         section = path.split('.')[0]
@@ -1023,9 +1205,6 @@ class TemplateHandler(web.RequestHandler):
             context = getattr(self, section)()
         except AttributeError:
             context = {}
-        context['cloud_url']  = CLOUD_HTTP_ADDRESS
-        context['bufferSize'] = get_jack_buffer_size()
-        context['sampleRate'] = get_jack_sample_rate()
         self.write(loader.load(path).generate(**context))
 
     def get_version(self):
@@ -1036,10 +1215,7 @@ class TemplateHandler(web.RequestHandler):
         return str(int(time.time()))
 
     def index(self):
-        context = {}
-
         user_id = safe_json_load(USER_ID_JSON_FILE, dict)
-        prefs   = safe_json_load(PREFERENCES_JSON_FILE, dict)
 
         with open(DEFAULT_ICON_TEMPLATE, 'r') as fh:
             default_icon_template = squeeze(fh.read().replace("'", "\\'"))
@@ -1059,6 +1235,7 @@ class TemplateHandler(web.RequestHandler):
             'default_settings_template': default_settings_template,
             'default_pedalboard': DEFAULT_PEDALBOARD,
             'cloud_url': CLOUD_HTTP_ADDRESS,
+            'plugins_url': PLUGINS_HTTP_ADDRESS,
             'pedalboards_url': PEDALBOARDS_HTTP_ADDRESS,
             'controlchain_url': CONTROLCHAIN_HTTP_ADDRESS,
             'hardware_profile': b64encode(json.dumps(SESSION.get_hardware_actuators()).encode("utf-8")),
@@ -1074,16 +1251,20 @@ class TemplateHandler(web.RequestHandler):
             'user_name': squeeze(user_id.get("name", "").replace("'", "\\'")),
             'user_email': squeeze(user_id.get("email", "").replace("'", "\\'")),
             'favorites': json.dumps(gState.favorites),
-            'preferences': json.dumps(prefs),
+            'preferences': json.dumps(SESSION.prefs.prefs),
+            'bufferSize': get_jack_buffer_size(),
+            'sampleRate': get_jack_sample_rate(),
         }
         return context
 
-    def icon(self):
-        return self.index()
-
     def pedalboard(self):
-        context = self.index()
         bundlepath = self.get_argument('bundlepath')
+
+        with open(DEFAULT_ICON_TEMPLATE, 'r') as fh:
+            default_icon_template = squeeze(fh.read().replace("'", "\\'"))
+
+        with open(DEFAULT_SETTINGS_TEMPLATE, 'r') as fh:
+            default_settings_template = squeeze(fh.read().replace("'", "\\'"))
 
         try:
             pedalboard = get_pedalboard_info(bundlepath)
@@ -1098,17 +1279,34 @@ class TemplateHandler(web.RequestHandler):
                 'hardware': {},
             }
 
-        context['pedalboard'] = b64encode(json.dumps(pedalboard).encode("utf-8"))
+        context = {
+            'default_icon_template': default_icon_template,
+            'default_settings_template': default_settings_template,
+            'pedalboard': b64encode(json.dumps(pedalboard).encode("utf-8"))
+        }
+
         return context
 
-class TemplateLoader(web.RequestHandler):
+    def settings(self):
+        prefs = safe_json_load(PREFERENCES_JSON_FILE, dict)
+
+        context = {
+            'cloud_url': CLOUD_HTTP_ADDRESS,
+            'version': self.get_argument('v'),
+            'preferences': json.dumps(prefs),
+            'bufferSize': get_jack_buffer_size(),
+            'sampleRate': get_jack_sample_rate(),
+        }
+        return context
+
+class TemplateLoader(TimelessRequestHandler):
     def get(self, path):
         self.set_header("Content-Type", "text/plain; charset=UTF-8")
         with open(os.path.join(HTML_DIR, 'include', path), 'r') as fh:
             self.write(fh.read())
         self.finish()
 
-class BulkTemplateLoader(web.RequestHandler):
+class BulkTemplateLoader(TimelessRequestHandler):
     def get(self):
         self.set_header("Content-Type", "text/plain; charset=UTF-8")
         basedir = os.path.join(HTML_DIR, 'include')
@@ -1186,12 +1384,7 @@ class SaveSingleConfigValue(JsonRequestHandler):
         key   = self.get_argument("key")
         value = self.get_argument("value")
 
-        data = safe_json_load(PREFERENCES_JSON_FILE, dict)
-        data[key] = value
-
-        with open(PREFERENCES_JSON_FILE, 'w') as fh:
-            json.dump(data, fh)
-
+        SESSION.prefs.setAndSave(key, value)
         self.write(True)
 
 class SaveUserId(JsonRequestHandler):
@@ -1371,6 +1564,8 @@ application = web.Application(
         EffectInstaller.urls('effect/install') +
         [
             (r"/system/info", SystemInfo),
+            (r"/system/prefs", SystemPreferences),
+            (r"/system/exechange", SystemExeChange),
 
             (r"/update/download/", UpdateDownload),
             (r"/update/begin", UpdateBegin),
@@ -1470,12 +1665,13 @@ application = web.Application(
 
             (r"/(index.html)?$", TemplateHandler),
             (r"/([a-z]+\.html)$", TemplateHandler),
+            (r"/(settings)$", TemplateHandler),
             (r"/load_template/([a-z_]+\.html)$", TemplateLoader),
             (r"/js/templates.js$", BulkTemplateLoader),
 
             (r"/websocket/?$", ServerWebSocket),
 
-            (r"/(.*)", web.StaticFileHandler, {"path": HTML_DIR}),
+            (r"/(.*)", TimelessStaticFileHandler, {"path": HTML_DIR}),
         ],
         debug=LOG and False, **settings)
 
