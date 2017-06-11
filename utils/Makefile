@@ -2,9 +2,9 @@
 CC  ?= gcc
 CXX ?= g++
 
-CFLAGS += -Wall -Wextra -std=c99 -fPIC -O3
-CXXFLAGS += -Wall -Wextra -Wshadow -std=gnu++0x -fPIC -O3
-LDFLAGS += -Wl,-O1 -Wl,--no-undefined -Wl,--strip-all
+CFLAGS += -Wall -Wextra -std=c99 -fPIC 
+CXXFLAGS += -Wall -Wextra -Wshadow -std=gnu++0x -fPIC 
+LDFLAGS += -Wl,--no-undefined 
 
 ifeq ($(shell pkg-config --atleast-version=0.22.0 lilv-0 && echo true), true)
 CXXFLAGS += -DHAVE_NEW_LILV
