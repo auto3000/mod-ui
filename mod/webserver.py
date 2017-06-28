@@ -31,7 +31,7 @@ from tornado.template import Loader
 from tornado.util import unicode_type
 from uuid import uuid4
 import logging
-
+import logging.handlers
 
 from mod.settings import (APP, LOG,
                           HTML_DIR, DOWNLOAD_TMP_DIR, DEVICE_KEY, DEVICE_WEBSERVER_PORT,
@@ -73,6 +73,38 @@ class GlobalWebServerState(object):
 
 gState = GlobalWebServerState()
 gState.favorites = []
+
+def setupLogging():
+	access_log = logging.getLogger("tornado.access")
+	app_log = logging.getLogger("tornado.application")
+	gen_log = logging.getLogger("tornado.general")
+	logger = logging.getLogger("")
+	access_log.setLevel(logging.DEBUG)
+	app_log.setLevel(logging.DEBUG)
+	gen_log.setLevel(logging.DEBUG)
+	logger.setLevel(logging.DEBUG)
+
+	consoleHandler = logging.StreamHandler(sys.stdout)
+	consoleFormatter = logging.Formatter('%(name)s %(levelname)s %(funcName)s:%(lineno)d: %(message)s')
+	consoleHandler.formatter = consoleFormatter
+
+	syslogHandler = logging.handlers.SysLogHandler('/dev/log')
+	syslogFormatter = logging.Formatter('%(name)s %(levelname)s %(funcName)s:%(lineno)d: %(message)s')
+	syslogHandler.formatter = syslogFormatter
+
+	logger.addHandler(syslogHandler)
+	access_log.addHandler(syslogHandler)
+	app_log.addHandler(syslogHandler)
+	gen_log.addHandler(syslogHandler)
+
+	logger.addHandler(consoleHandler)
+	access_log.addHandler(consoleHandler)
+	app_log.addHandler(consoleHandler)
+	gen_log.addHandler(consoleHandler)
+
+	logger.info("Logging to syslog and console is ready.")
+	return
+
 
 @gen.coroutine
 def install_bundles_in_tmp_dir(callback):
@@ -1755,6 +1787,7 @@ def stop():
     IOLoop.instance().stop()
 
 def run():
+    setupLogging()
     prepare()
     start()
 
