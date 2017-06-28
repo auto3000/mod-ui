@@ -54,7 +54,7 @@ class SerialIOStream(BaseIOStream):
             else:
                 r = self.sp.read_bytes(self.read_chunk_size)
         except Exception as inst:
-            print ('SerialIOStream: failed to read from HMI serial ', inst)
+            logging.error('SerialIOStream: failed to read from HMI serial ' +  inst)
             return None
         if r == '':
             return None
@@ -78,7 +78,7 @@ class HMI(object):
             sp.flushInput()
             sp.flushOutput()
         except Exception as e:
-            print("ERROR: Failed to open HMI serial port, error was:\n%s" % e)
+            logging.error("Failed to open HMI serial port, error was:\n%s" % e)
             return
 
         self.sp = SerialIOStream(sp)
@@ -97,7 +97,7 @@ class HMI(object):
         self.checker()
 
     def checker(self, data=None):
-        logging.error("[JFD] enter checker ")
+        logging.info("[hmi] enter checker ")
         if data is not None:
             logging.info('[hmi] received <- %s' % repr(data))
             try:
@@ -125,20 +125,20 @@ class HMI(object):
                             self.send("resp %d %s" % (0 if resp else -1, resp_args))
                     msg.run_cmd(_callback)
         try:
-            logging.error("[JFD] wait read_until ")
+            logging.debug("wait read_until ")
             self.sp.read_until(b'\0', self.checker)
-            logging.error("[JFD] continue read_until ")
+            logging.debug("continue read_until ")
         except serial.SerialException as e:
             logging.error("[hmi] error while reading %s" % e)
+        except:
+            logging.error("[hmi] error while reading", exc_info=True)
 
     def process_queue(self):
-        logging.info("[hmi] process_queue: JFD entry")
         if self.sp is None:
             logging.error("[hmi] process_queue: self.sp is None")
             return
 
         def no_callback():
-            logging.info("[hmi] process_queue: JFD no_callback")
             pass
 
         try:
@@ -156,7 +156,7 @@ class HMI(object):
         self.send("resp -1")
 
     def send(self, msg, callback=None, datatype='int'):
-        logging.error('[JFD] send msg=' + msg)
+        logging.info('send msg=' + msg)
         if self.sp is None:
             return
 
@@ -168,7 +168,7 @@ class HMI(object):
             return
 
         def no_callback2():
-            logging.error('[JFD] send: no_callback2')
+            logging.error('send: no_callback2')
             pass
 
         # is resp, just send
@@ -188,7 +188,7 @@ class HMI(object):
             dataLen = len(data)
 
             if numBytesFree-dataLen-2 < 0:
-                print("ERROR: Controller out of memory when sending initial state (stopped at %i)" % num)
+                logging.error("Controller out of memory when sending initial state (stopped at %i)" % num)
                 if pedalboard_id >= num:
                     pedalboard_id = 0
                 break
@@ -240,7 +240,7 @@ class HMI(object):
                 dataLen = len(data)
 
                 if numBytesFree-dataLen-2 < 0:
-                    print("ERROR: Controller out of memory when sending options (stopped at %i)" % currentNum)
+                    logging.error("Controller out of memory when sending options (stopped at %i)" % currentNum)
                     if value >= currentNum:
                         value = 0.0
                     rmax = currentNum

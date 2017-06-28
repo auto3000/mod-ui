@@ -34,7 +34,7 @@ class FakeHMI(HMI):
     #    pass
 
     def send(self, msg, callback=None, datatype=None):
-        logging.info('[JFD] fake send msg='+msg)
+        logging.info('fake send msg='+msg)
         if callback is None:
             return
         if datatype == 'boolean':
@@ -76,7 +76,7 @@ class FakeHost(Host):
 
     # send data to host, set modified flag to true
     def send_modified(self, msg, callback=None, datatype='int'):
-        print("JFD FakeHMI send_modified %s" % msg )
+        logging.info("FakeHMI send_modified %s" % msg )
         self.pedalboard_modified = True
         if callback is not None:
             callback(True)

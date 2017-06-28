@@ -30,6 +30,8 @@ from tornado.ioloop import IOLoop
 from tornado.template import Loader
 from tornado.util import unicode_type
 from uuid import uuid4
+import logging
+
 
 from mod.settings import (APP, LOG,
                           HTML_DIR, DOWNLOAD_TMP_DIR, DEVICE_KEY, DEVICE_WEBSERVER_PORT,
@@ -1732,7 +1734,6 @@ def prepare(isModApp = False):
     if LOG:
         from tornado.log import enable_pretty_logging
         enable_pretty_logging()
-        print( "JFD enable_pretty_logging");
 
     def checkhost():
         if SESSION.host.readsock is None or SESSION.host.writesock is None:
@@ -1747,7 +1748,7 @@ def prepare(isModApp = False):
     ioinstance.add_callback(checkhost)
 
 def start():
-    print ("JFD start instance")
+    logging.info("Start ioloop instance")
     IOLoop.instance().start()
 
 def stop():

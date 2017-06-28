@@ -706,7 +706,7 @@ def get_jack_hardware_ports(isAudio, isOutput):
     return charPtrPtrToStringList(utils.get_jack_hardware_ports(isAudio, isOutput))
 
 def connect_jack_ports(port1, port2):
-    print("JFD connect JACK ");
+    logging.info("Connect JACK ");
     return bool(utils.connect_jack_ports(port1.encode("utf-8"), port2.encode("utf-8")))
 
 def disconnect_jack_ports(port1, port2):

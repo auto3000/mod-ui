@@ -37,10 +37,10 @@ elif HOST_CARLA:
     from mod.host_carla import CarlaHost as Host
 else:
     from mod.host import Host
-    print("JFD start Host session.py");
+    logging.info("Start Host session.py");
 
 
-print("JFD start session.py");
+logging.info("Start session.py");
 
 
 class UserPreferences(object):
@@ -91,7 +91,7 @@ class Session(object):
             self.hmi  = HMISocket(HMI_SOCKET_PORT, self.hmi_initialized_cb)
             hmiOpened = True #self.hmi.sp is not None
 
-        print("Using HMI =>", hmiOpened)
+        logging.info("Using HMI =>" + str(hmiOpened))
 
         if not hmiOpened:
             self.hmi = FakeHMI()
@@ -161,12 +161,12 @@ class Session(object):
 
     # Connect 2 ports
     def web_connect(self, port_from, port_to, callback):
-        print("JFD web_disconnect")
+        logging.info("web_connect")
         self.host.connect(port_from, port_to, callback)
 
     # Disconnect 2 ports
     def web_disconnect(self, port_from, port_to, callback):
-        print("JFD web_disconnect")
+        logging.info("web_disconnect")
         self.host.disconnect(port_from, port_to, callback)
 
     # Save the current pedalboard

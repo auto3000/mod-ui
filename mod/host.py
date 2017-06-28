@@ -400,7 +400,7 @@ class Host(object):
                     optdataLen = len(optdata)
 
                     if numBytesFree-optdataLen-2 < 0:
-                        print("WARNING: Preventing sending too many options to addressing (stopped at %i)" % currentNum)
+                        logging.info("WARNING: Preventing sending too many options to addressing (stopped at %i)" % currentNum)
                         if rvalue >= currentNum:
                             rvalue = 0.0
                         rmaximum = currentNum
@@ -434,7 +434,7 @@ class Host(object):
                                                                          data['maximum'],
                                                                          ), callback, datatype='boolean')
 
-        print("ERROR: Invalid addressing requested for", actuator)
+        logging.error("Invalid addressing requested for", actuator)
         callback(False)
         return
 
@@ -449,7 +449,7 @@ class Host(object):
         if atype == Addressings.ADDRESSING_TYPE_MIDI:
             return self.send_modified("midi_unmap %d %s" % (instance_id, portsymbol), callback, datatype='boolean')
 
-        print("ERROR: Invalid unaddressing requested")
+        logging.error("Invalid unaddressing requested")
         callback(False)
         return
 
@@ -486,9 +486,9 @@ class Host(object):
                 return 0.0
             return float(pluginData['mapPresets'].index(pluginData['preset']))
 
-        print(json.dumps(pluginData))
-        print(json.dumps(pluginData['ports']))
-        print(json.dumps( pluginData['ports'][portsymbol]))
+        #print(json.dumps(pluginData))
+        #print(json.dumps(pluginData['ports']))
+        #print(json.dumps( pluginData['ports'][portsymbol]))
         return pluginData['ports'][portsymbol]
 
     def addr_task_store_address_data(self, instance_id, portsymbol, data):
@@ -626,7 +626,7 @@ class Host(object):
                 self._idle = True
 
         self._idle = False
-        print ( "JFD Main socket, used for sending messages ")
+        logging.info( "Main socket, used for sending messages ")
         # Main socket, used for sending messages
         self.writesock = iostream.IOStream(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
         self.writesock.set_close_callback(self.writer_connection_closed)
@@ -778,7 +778,7 @@ class Host(object):
                     pluginData['bypassed'] = bool(value)
 
                 elif portsymbol == ":presets":
-                    print("presets changed by backend", value)
+                    logging.info("presets changed by backend", value)
                     value = int(value)
                     if value < 0 or value >= len(pluginData['mapPresets']):
                         return
@@ -1002,7 +1002,7 @@ class Host(object):
 
     # send data to host, set modified flag to true
     def send_modified(self, msg, callback=None, datatype='int'):
-        print("JFD send_modified %s" % msg )
+        logging.info("send_modified msg=%s" % msg )
         self.pedalboard_modified = True
         self._queue.append((msg, callback, datatype))
         if self._idle:
@@ -1186,7 +1186,7 @@ class Host(object):
 
     def add_bundle(self, bundlepath, callback):
         if is_bundle_loaded(bundlepath):
-            print("NOTE: Skipped add_bundle, already in world")
+            logging.info("NOTE: Skipped add_bundle, already in world")
             callback((False, "Bundle already loaded"))
             return
 
@@ -1198,7 +1198,7 @@ class Host(object):
 
     def remove_bundle(self, bundlepath, isPluginBundle, callback):
         if not is_bundle_loaded(bundlepath):
-            print("NOTE: Skipped remove_bundle, not in world")
+            logging.info("NOTE: Skipped remove_bundle, not in world")
             callback((False, "Bundle not loaded"))
             return
 
@@ -1401,7 +1401,7 @@ class Host(object):
         pluginData  = self.plugins[instance_id]
 
         if symbol in pluginData['designations']:
-            print("ERROR: Trying to modify a specially designated port '%s', stop!" % symbol)
+            logging.error("Trying to modify a specially designated port '%s', stop!" % symbol)
             return
 
         pluginData['ports'][symbol] = value
@@ -1647,7 +1647,7 @@ class Host(object):
         pedalpreset = self.pedalboard_presets[idx]
 
         if pedalpreset is None:
-            print("ERROR: Asked to load an invalid pedalboard preset, number", idx)
+            logging.error("Asked to load an invalid pedalboard preset, number", idx)
             callback(False)
             return
 
@@ -1738,9 +1738,9 @@ class Host(object):
         return "effect_%d:%s" % (instance_id, portsymbol)
 
     def connect(self, port_from, port_to, callback):
-        print("JFD connect host.py")
+        logging.info("Connect host.py")
         if (port_from, port_to) in self.connections:
-            print("NOTE: Requested connection already exists")
+            logging.info("NOTE: Requested connection already exists")
             callback(True)
             return
 
@@ -1750,7 +1750,7 @@ class Host(object):
                 self.connections.append((port_from, port_to))
                 self.msg_callback("connect %s %s" % (port_from, port_to))
             else:
-                print("ERROR: backend failed to connect ports: '%s' => '%s'" % (port_from, port_to))
+                logging.error("backend failed to connect ports: '%s' => '%s'" % (port_from, port_to))
 
         self.send_modified("connect %s %s" % (self._fix_host_connection_port(port_from),
                                               self._fix_host_connection_port(port_to)),
@@ -1763,14 +1763,14 @@ class Host(object):
             self.msg_callback("disconnect %s %s" % (port_from, port_to))
 
             if not ok:
-                print("ERROR: disconnect '%s' => '%s' failed" % (port_from, port_to))
+                logging.error("disconnect '%s' => '%s' failed" % (port_from, port_to))
 
             self.pedalboard_modified = True
 
             try:
                 self.connections.remove((port_from, port_to))
             except:
-                print("NOTE: Requested '%s' => '%s' connection doesn't exist" % (port_from, port_to))
+                logging.info("NOTE: Requested '%s' => '%s' connection doesn't exist" % (port_from, port_to))
 
         if len(self.connections) == 0:
             return host_callback(False)
@@ -1779,13 +1779,13 @@ class Host(object):
         try:
             port_from_2 = self._fix_host_connection_port(port_from)
         except:
-            print("NOTE: Requested '%s' source port doesn't exist, assume disconnected" % port_from)
+            logging.info("NOTE: Requested '%s' source port doesn't exist, assume disconnected" % port_from)
             return host_callback(True)
 
         try:
             port_to_2 = self._fix_host_connection_port(port_to)
         except:
-            print("NOTE: Requested '%s' target port doesn't exist, assume disconnected" % port_to)
+            logging.info("NOTE: Requested '%s' target port doesn't exist, assume disconnected" % port_to)
             return host_callback(True)
 
         host_callback(disconnect_jack_ports(port_from_2, port_to_2))
@@ -1928,7 +1928,7 @@ class Host(object):
             pdata = init_pedal_preset.get(p['instance'], None)
 
             if pdata is None:
-                print("WARNING: Pedalboard preset missing data for instance name '%s'" % p['instance'])
+                logging.info("WARNING: Pedalboard preset missing data for instance name '%s'" % p['instance'])
                 continue
 
             p['bypassed'] = pdata['bypassed']
@@ -2692,7 +2692,7 @@ _:b%i
         pluginData  = self.plugins.get(instance_id, None)
 
         if pluginData is None:
-            print("ERROR: Trying to address non-existing plugin instance %i: '%s'" % (instance_id, instance))
+            logging.error("Trying to address non-existing plugin instance %i: '%s'" % (instance_id, instance))
             callback(False)
             return
 
@@ -2748,7 +2748,7 @@ _:b%i
             return
 
         if self.addressings.is_hmi_actuator(actuator_uri) and not self.hmi.initialized:
-            print("WARNING: Cannot address to HMI at this point")
+            logging.info("WARNING: Cannot address to HMI at this point")
             callback(False)
             return
 
@@ -2800,7 +2800,7 @@ _:b%i
         logging.info("hmi list bank pedalboards")
 
         if bank_id < 0 or bank_id > len(self.banks):
-            print("ERROR: Trying to list pedalboards using out of bounds bank id %i" % (bank_id))
+            logging.error("Trying to list pedalboards using out of bounds bank id %i" % (bank_id))
             callback(False, "")
             return
 
@@ -2822,7 +2822,7 @@ _:b%i
             dataLen = len(data)
 
             if numBytesFree-dataLen-2 < 0:
-                print("ERROR: Controller out of memory when listing pedalboards (stopping at %i)" % num)
+                logging.error("Controller out of memory when listing pedalboards (stopping at %i)" % num)
                 break
 
             num += 1
@@ -2844,19 +2844,19 @@ _:b%i
         logging.info("hmi load bank pedalboard")
 
         if bank_id < 0 or bank_id > len(self.banks):
-            print("ERROR: Trying to load pedalboard using out of bounds bank id %i" % (bank_id))
+            logging.error("Trying to load pedalboard using out of bounds bank id %i" % (bank_id))
             callback(False)
             return
 
         try:
             pedalboard_id = int(pedalboard_id)
         except:
-            print("ERROR: Trying to load pedalboard using invalid pedalboard_id '%s'" % (pedalboard_id))
+            logging.error("Trying to load pedalboard using invalid pedalboard_id '%s'" % (pedalboard_id))
             callback(False)
             return
 
         if self.next_hmi_pedalboard is not None:
-            print("NOTE: Delaying loading of %i:%i" % (bank_id, pedalboard_id))
+            logging.info("NOTE: Delaying loading of %i:%i" % (bank_id, pedalboard_id))
             self.next_hmi_pedalboard = (bank_id, pedalboard_id)
             callback(False)
             return
@@ -2876,7 +2876,7 @@ _:b%i
                 navigateChannel = 15
 
         if pedalboard_id < 0 or pedalboard_id >= len(pedalboards):
-            print("ERROR: Trying to load pedalboard using out of bounds pedalboard id %i" % (pedalboard_id))
+            logging.error("Trying to load pedalboard using out of bounds pedalboard id %i" % (pedalboard_id))
             callback(False)
             return
 
@@ -2887,15 +2887,15 @@ _:b%i
 
         def loaded2_callback(ok):
             if self.next_hmi_pedalboard is None:
-                print("ERROR: Delayed loading is in corrupted state")
+                logging.error("Delayed loading is in corrupted state")
                 return
             if ok:
-                print("NOTE: Delayed loading of %i:%i has started" % self.next_hmi_pedalboard)
+                logging.info("NOTE: Delayed loading of %i:%i has started" % self.next_hmi_pedalboard)
             else:
-                print("ERROR: Delayed loading of %i:%i failed!" % self.next_hmi_pedalboard)
+                logging.error("Delayed loading of %i:%i failed!" % self.next_hmi_pedalboard)
 
         def loaded_callback(ok):
-            print("NOTE: Loading of %i:%i finished" % (bank_id, pedalboard_id))
+            logging.info("NOTE: Loading of %i:%i finished" % (bank_id, pedalboard_id))
 
             # Check if there's a pending pedalboard to be loaded
             next_pedalboard = self.next_hmi_pedalboard
@@ -2962,7 +2962,7 @@ _:b%i
                 rolling = bool(value > 0.5)
                 self.set_transport_rolling(rolling, callback)
             else:
-                print("ERROR: Trying to set value for the wrong pedalboard port:", portsymbol)
+                logging.error("Trying to set value for the wrong pedalboard port:", portsymbol)
                 return None
 
             self.msg_callback("transport %i %f %f %s" % (self.transport_rolling,

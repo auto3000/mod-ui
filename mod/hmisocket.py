@@ -40,8 +40,6 @@ class EchoServer(TCPServer):
 
     @gen.coroutine
     def handle_stream(self, stream, address):
-        #threading.Thread(target=self.my_hmisocket.handle_stream, args=(stream, address)).start()
-        #yield
         logging.info('[EchoServer] connection from %s' % repr(address))
         yield self.my_hmisocket.handle_stream(stream, address)
 
@@ -49,8 +47,8 @@ class EchoServer(TCPServer):
 class HMISocket(HMI):
 
     def __init__(self, port, callback):
-        print("JFD launch HMISocket on port", port)
-        self.sp = None #FakeHMI().sp
+        logging.info("Launch HMISocket on port", port)
+        self.sp = None 
         self.port = port
         self.queue = []
         self.queue_idle = True
@@ -64,9 +62,8 @@ class HMISocket(HMI):
         try:
             server = EchoServer(ioloop.IOLoop.instance(), self, self.callback)
             server.listen(self.port)
-            #server.start(0)  # Forks multiple sub-processes
         except Exception as e:
-            print("ERROR: Failed to open HMI socket port, error was: %s" % e)
+            logging.error("Failed to open HMI socket port, error was: %s" % e)
             return
 
 
@@ -83,24 +80,8 @@ class HMISocket(HMI):
             else:
                 self.ioloop.add_timeout(timedelta(seconds=1), lambda:self.ping(self.ping_callback))
 
-#        def no_callback():
-#            pass
-        #stream.write(b"Hello my friend JFD protocol\r\n\r\n", no_callback)
         logging.info('[hmi_socket] connection from %s' % repr(address))
-        #self.sp = SerialIOStream(stream)
         self.sp = stream
         self.ping(ping_callback)
-        #logging.info('[hmi_socket] ping passed')
-        #data = yield stream.read_until(b"\0")
         self.checker()
-        #logging.info('[hmi_socket] checker passed')
 
-        while False:
-        #self.sp.write(b"Hello my friend JFD protocol2222\r\n\r\n")
-            try:
-                data = yield stream.read_until(b"\n")
-                logging.info('[hmi_socket] receive %s' % data)
-                yield stream.write(data)
-            except StreamClosedError:
-                break
-        #self.sp = FakeHMI().sp
