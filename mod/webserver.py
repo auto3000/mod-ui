@@ -699,7 +699,7 @@ class EffectAdd(JsonRequestHandler):
         try:
             data = get_plugin_info(uri)
         except:
-            print("ERROR in webserver.py: get_plugin_info for '%s' failed" % uri)
+            logging.error("ERROR in webserver.py: get_plugin_info for '%s' failed" % uri)
             raise web.HTTPError(404)
 
         self.write(data)
@@ -718,7 +718,7 @@ class EffectGet(JsonRequestHandler):
         try:
             data = get_plugin_info(uri)
         except:
-            print("ERROR in webserver.py: get_plugin_info for '%s' failed" % uri)
+            logging.error("ERROR in webserver.py: get_plugin_info for '%s' failed" % uri)
             raise web.HTTPError(404)
 
         self.write(data)
@@ -745,7 +745,7 @@ class EffectParameterAddress(JsonRequestHandler):
         uri  = data.get('uri', None)
 
         if uri is None:
-            print("ERROR in webserver.py: Attempting to address without an URI")
+            logging.error("ERROR in webserver.py: Attempting to address without an URI")
             raise web.HTTPError(404)
 
         label   = data.get('label', '---') or '---'
@@ -795,13 +795,13 @@ class EffectPresetDelete(JsonRequestHandler):
 class ServerWebSocket(websocket.WebSocketHandler):
     @gen.coroutine
     def open(self):
-        print("websocket open")
+        logging.info("websocket open")
         self.set_nodelay(True)
         yield gen.Task(SESSION.websocket_opened, self)
 
     @gen.coroutine
     def on_close(self):
-        print("websocket close")
+        logging.info("websocket close")
         yield gen.Task(SESSION.websocket_closed, self)
 
     def on_message(self, message):
@@ -1303,7 +1303,7 @@ class TemplateHandler(TimelessRequestHandler):
         try:
             pedalboard = get_pedalboard_info(bundlepath)
         except:
-            print("ERROR in webserver.py: get_pedalboard_info failed")
+            logging.error("ERROR in webserver.py: get_pedalboard_info failed")
             pedalboard = {
                 'height': 0,
                 'width': 0,
@@ -1453,7 +1453,7 @@ class FavoritesAdd(JsonRequestHandler):
 
         # safety check, no duplicates please
         if uri in gState.favorites:
-            print("ERROR: URI '%s' already in favorites" % uri)
+            logging.error("ERROR: URI '%s' already in favorites" % uri)
             self.write(False)
             return
 
@@ -1471,7 +1471,7 @@ class FavoritesRemove(JsonRequestHandler):
 
         # safety check
         if uri not in gState.favorites:
-            print("ERROR: URI '%s' not in favorites" % uri)
+            logging.error("ERROR: URI '%s' not in favorites" % uri)
             self.write(False)
             return
 
@@ -1753,9 +1753,9 @@ def prepare(isModApp = False):
                 gState.favorites.remove(uri)
 
     if False:
-        print("Scanning plugins, this may take a little...")
+        logging.info("Scanning plugins, this may take a little...")
         get_all_plugins()
-        print("Done!")
+        logging.info("Done!")
 
     if not isModApp:
         signal(SIGUSR1, signal_recv)
@@ -1769,7 +1769,7 @@ def prepare(isModApp = False):
 
     def checkhost():
         if SESSION.host.readsock is None or SESSION.host.writesock is None:
-            print("Host failed to initialize, is the backend running?")
+            logging.error("Host failed to initialize, is the backend running?")
             SESSION.host.close_jack()
             sys.exit(1)
 
