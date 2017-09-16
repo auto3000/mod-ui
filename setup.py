@@ -12,6 +12,7 @@ import sys
 class mod_utils_builder(build):
     def run(self):
         build.run(self)
+        os.system("make -C utils clean")
         os.system("make -C utils")
 
 class mod_utils_installer(install):
