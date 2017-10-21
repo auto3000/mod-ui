@@ -16,7 +16,7 @@
  */
 
 #include "utils.h"
-
+#include <syslog.h>
 #include <libgen.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -2432,7 +2432,6 @@ bool _is_pedalboard_broken(const LilvPlugin* const p,
                            const LilvNode* const lv2protonode)
 {
     bool broken = false;
-
     if (LilvNodes* const blocks = lilv_plugin_get_value(p, ingenblocknode))
     {
         LILV_FOREACH(nodes, itblocks, blocks)
@@ -2446,8 +2445,15 @@ bool _is_pedalboard_broken(const LilvPlugin* const p,
 
                 if (PLUGNFO.count(uri) == 0)
                 {
+
+                  syslog(LOG_INFO| LOG_LOCAL1, "broken=true missing plugin=%s... ",uri.c_str() );
+
                     broken = true;
                     break;
+                }
+                else
+                {
+                  syslog(LOG_INFO| LOG_LOCAL1, "broken=false found plugin=%s... ",uri.c_str() );
                 }
             }
         }
@@ -3044,6 +3050,8 @@ const char* const* add_bundle_to_lilv_world(const char* const bundle)
             if (std::find(BLACKLIST.begin(), BLACKLIST.end(), uri) != BLACKLIST.end())
                 continue;
 
+                syslog(LOG_INFO| LOG_LOCAL1, "Found plugin=%s... ",uri.c_str() );
+
             // store new empty data
             PLUGNFO[uri] = PluginInfo_Init;
             PLUGNFO_Mini[uri] = PluginInfo_Mini_Init;
@@ -3530,7 +3538,7 @@ const PedalboardInfo_Mini* const* get_all_pedalboards(void)
 
         // get new info
         const PedalboardInfo_Mini& info = _get_pedalboard_info_mini(p, w, rdftypenode, ingenblocknode, lv2protonode);
-
+        syslog(LOG_INFO | LOG_LOCAL1,"get_all_pedalboards: x1 title=%s valid=%d",info.title, info.valid);
         if (! info.valid)
             continue;
 
@@ -3591,6 +3599,8 @@ const char* const* get_broken_pedalboards(void)
         {
             const std::string pedalboard(lilv_node_as_uri(lilv_plugin_get_uri(p)));
             brokenpedals.push_back(pedalboard);
+            syslog(LOG_INFO| LOG_LOCAL1, "brokenpedals add=%s... ",pedalboard.c_str() );
+
         }
     }
 
@@ -3616,6 +3626,8 @@ const char* const* get_broken_pedalboards(void)
 
         return _get_broken_pedals_ret;
     }
+
+    syslog(LOG_INFO| LOG_LOCAL1, "No brokenpedals" );
 
     return nullptr;
 }
