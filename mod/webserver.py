@@ -1769,9 +1769,11 @@ def prepare(isModApp = False):
 
     def checkhost():
         if SESSION.host.readsock is None or SESSION.host.writesock is None:
-            logging.error("Host failed to initialize, is the backend running?")
-            SESSION.host.close_jack()
-            sys.exit(1)
+            logging.error("Host failed to initialize, is the backend running? Retry...")
+            SESSION.host.open_connection_if_needed(None)
+            ioinstance.call_later(3.0, checkhost)
+            # SESSION.host.close_jack()
+            # sys.exit(1)
 
         elif not SESSION.host.connected:
             ioinstance.call_later(0.2, checkhost)

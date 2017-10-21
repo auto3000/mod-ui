@@ -79,7 +79,7 @@ def get_all_good_pedalboards():
     for pb in allpedals:
         if not pb['broken']:
             goodpedals.append(pb)
-
+    logging.info("get_all_good_pedalboards returns %i good pedalboards in a total of %i pedalboards." % (len(allpedals), len(goodpedals)) )
     return goodpedals
 
 # class to map between numeric ids and string instances
@@ -523,7 +523,7 @@ class Host(object):
     @gen.coroutine
     def init_host(self):
         self.init_jack()
-        self.open_connection_if_needed(None)
+        # self.open_connection_if_needed(None)
         self.load_prefs()
 
         data = get_jack_data(True)
@@ -608,6 +608,12 @@ class Host(object):
             self.report_current_state(websocket)
             return
 
+        if self.readsock is None or self.writesock is None:
+            self._idle = False
+            self.open_host_connection(websocket)
+
+    def open_host_connection(self, websocket):
+
         def reader_check_response():
             self.process_read_queue()
 
@@ -625,32 +631,38 @@ class Host(object):
             else:
                 self._idle = True
 
-        self._idle = False
-        logging.info( "Main socket, used for sending messages ")
-        # Main socket, used for sending messages
-        self.writesock = iostream.IOStream(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
-        self.writesock.set_close_callback(self.writer_connection_closed)
-        self.writesock.set_nodelay(True)
-        self.writesock.connect(self.addr, writer_check_response)
+        if self.writesock is None:
+            try:
+                # Main socket, used for sending messages
+                logging.info( "Main socket, used for sending messages to address: " + str(self.addr))
+                self.writesock = iostream.IOStream(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+                self.writesock.set_close_callback(self.writer_connection_closed)
+                self.writesock.set_nodelay(True)
+                self.writesock.connect(self.addr, writer_check_response)
+            except Exception as error:
+                logging.exception(error)
+                self.writer_connection_closed()
 
-        # Extra socket, used for receiving messages
-        self.readsock = iostream.IOStream(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
-        self.readsock.set_close_callback(self.reader_connection_closed)
-        self.readsock.set_nodelay(True)
-        self.readsock.connect((self.addr[0], self.addr[1]+1), reader_check_response)
+        if self.readsock is None:
+            try:
+                # Extra socket, used for receiving messages
+                logging.info( "Extra socket, used for receiving messages from address: " + str(self.addr))
+                self.readsock = iostream.IOStream(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+                self.readsock.set_close_callback(self.reader_connection_closed)
+                self.readsock.set_nodelay(True)
+                self.readsock.connect((self.addr[0], self.addr[1]), reader_check_response)
+            except Exception as error:
+                logging.exception(error)
+                self.reader_connection_closed()
 
     def reader_connection_closed(self):
         self.readsock = None
+        logging.error("Reader connection is closed to address: " + str(self.addr));
+
 
     def writer_connection_closed(self):
         self.writesock = None
-        self.crashed = True
-        self.statstimer.stop()
-
-        if self.memtimer is not None:
-            self.memtimer.stop()
-
-        self.msg_callback("stop")
+        logging.error("Writer connection is closed to address: " + str(self.addr));
 
     # -----------------------------------------------------------------------------------------------------------------
 
@@ -997,8 +1009,15 @@ class Host(object):
         logging.info("[host] sending -> %s" % msg)
 
         encmsg = "%s\0" % str(msg)
-        self.writesock.write(encmsg.encode("utf-8"))
-        self.writesock.read_until(b"\0", check_response)
+        try:
+            self.writesock.write(encmsg.encode("utf-8"))
+            self.writesock.read_until(b"\0", check_response)
+        except Exception as error:
+            socket = self.writesock
+            self.writesock = None
+            logging.exception(error)
+            logging.error("Close writesock")
+            socket.close()
 
     # send data to host, set modified flag to true
     def send_modified(self, msg, callback=None, datatype='int'):
@@ -2844,7 +2863,7 @@ _:b%i
         logging.info("hmi load bank pedalboard")
 
         if bank_id < 0 or bank_id > len(self.banks):
-            logging.error("Trying to load pedalboard using out of bounds bank id %i" % (bank_id))
+            logging.error("Trying to load pedalboard using out of bounds bank id %i len=%i" % (bank_id, len(self.banks)))
             callback(False)
             return
 
@@ -2876,7 +2895,7 @@ _:b%i
                 navigateChannel = 15
 
         if pedalboard_id < 0 or pedalboard_id >= len(pedalboards):
-            logging.error("Trying to load pedalboard using out of bounds pedalboard id %i" % (pedalboard_id))
+            logging.error("Trying to load pedalboard using out of bounds pedalboard id %i len=%i" % (pedalboard_id, len(pedalboards)))
             callback(False)
             return
 
