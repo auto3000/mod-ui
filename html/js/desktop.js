@@ -1443,7 +1443,7 @@ Desktop.prototype.makePedalboardBox = function (el, trigger) {
                     })
                 },
                 error: function () {
-                    new Bug("Couldn't load pedalboard")
+                    new Bug("Couldn't load pedalboard in makePedalboardBox()")
                 },
                 cache: false
             })
@@ -1613,7 +1613,7 @@ Desktop.prototype.loadPedalboard = function (bundlepath, callback) {
                 callback(true)
             },
             error: function () {
-                new Bug("Couldn't load pedalboard")
+                new Bug("Couldn't load pedalboard in loadPedalboard()")
             },
             cache: false,
             dataType: 'json'
