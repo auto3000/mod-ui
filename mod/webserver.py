@@ -976,15 +976,16 @@ class PedalboardLoadBundle(JsonRequestHandler):
     @gen.engine
     def post(self):
         bundlepath = os.path.abspath(self.get_argument("bundlepath"))
-
         try:
             isDefault = bool(int(self.get_argument("isDefault")))
         except:
             isDefault = False
+        logging.info("PedalboardLoadBundle: receive request bundlepath=%s isDefault=%s" % (self.get_argument("bundlepath"), isDefault))
 
         if os.path.exists(bundlepath):
             name = SESSION.load_pedalboard(bundlepath, isDefault)
         else:
+            logging.error("ERROR: PedalboardLoadBundle path does not exist bundle=%s isDefault=%s" % (bundlepath, isDefault))
             name = None
 
         self.write({

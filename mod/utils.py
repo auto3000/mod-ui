@@ -576,6 +576,7 @@ def get_all_plugins():
 def get_plugin_info(uri):
     info = utils.get_plugin_info(uri.encode("utf-8"))
     if not info:
+        logging.error("get_plugin_info %s returns NULL" % (uri.encode("utf-8")));
         raise Exception
     return structToDict(info.contents)
 
@@ -584,6 +585,7 @@ def get_plugin_info(uri):
 def get_plugin_gui(uri):
     info = utils.get_plugin_gui(uri.encode("utf-8"))
     if not info:
+        logging.error("get_plugin_gui %s returns NULL" % (uri.encode("utf-8")));
         raise Exception
     return structToDict(info.contents)
 
@@ -592,6 +594,7 @@ def get_plugin_gui(uri):
 def get_plugin_gui_mini(uri):
     info = utils.get_plugin_gui_mini(uri.encode("utf-8"))
     if not info:
+        logging.error("utils.get_plugin_gui_mini %s returns NULL" % (uri.encode("utf-8")));
         raise Exception
     return structToDict(info.contents)
 
@@ -599,6 +602,7 @@ def get_plugin_gui_mini(uri):
 def get_plugin_control_inputs_and_monitored_outputs(uri):
     info = utils.get_plugin_control_inputs_and_monitored_outputs(uri.encode("utf-8"))
     if not info:
+        logging.error("utils.get_plugin_control_inputs_and_monitored_outputs %s returns NULL" % (uri.encode("utf-8")));
         return {'inputs':[],'monitoredOutputs':[],'error':True}
     return structToDict(info.contents)
 
@@ -621,6 +625,7 @@ def get_broken_pedalboards():
 def get_pedalboard_info(bundle):
     info = utils.get_pedalboard_info(bundle.encode("utf-8"))
     if not info:
+        logging.error("utils.get_pedalboard_info %s returns NULL" % (bundle.encode("utf-8")));
         raise Exception
     return structToDict(info.contents)
 
@@ -630,6 +635,7 @@ def get_pedalboard_info(bundle):
 def get_pedalboard_size(bundle):
     size = utils.get_pedalboard_size(bundle.encode("utf-8"))
     if not size:
+        logging.error("utils.get_pedalboard_size %s returns NULL" % (bundle.encode("utf-8")));
         raise Exception
     width  = int(size[0])
     height = int(size[1])
